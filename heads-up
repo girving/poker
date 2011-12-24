@@ -655,7 +655,9 @@ elif options.variable or options.bets:
     print 'blinds = %g %g'%(sb,bb)
     print 'bets = %s'%bets
     cache = 'variable-sb%g-bb%g-bets%d-%d.npz'%(sb,bb,len(bets),abs(ahash(sb,bb,bets)))
-    print 'cache file = %s\n'%cache
+    print 'cache file = %s'%cache
+    print 'command = %s'%' '.join(sys.argv)
+    print
     if os.path.exists(cache):
         data = load(cache)
         assert allclose(sb,data['sb'])
