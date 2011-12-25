@@ -203,7 +203,7 @@ inline score_tv max_bit(score_tv x) {
     return ((score_t)1<<31)>>clz(x);
 }
 
-// Determine the best possible five card hand out of a bit set of seven cards (40+19+26+30+16+13+26+4 = 174 operations)
+// Determine the best possible five card hand out of a bit set of seven cards (40+19+26+23+16+13+26+4 = 167 operations)
 score_tv score_hand(cards_tv cards) {
     #define SCORE(type,c0,c1) ((type)|((c0)<<14)|(c1)) // 3 operations
     const score_t each_card = 0x1fff;
@@ -212,7 +212,8 @@ score_tv score_hand(cards_tv cards) {
     // Check for straight flushes (15+5+8+7+3+2 = 40 operations)
     const cards_tv suits = count_suits(cards);
     const cards_tv flushes = each_suit&suits>>2&(suits>>1|suits); // Detect suits with at least 5 cards
-    const score_tv straight_flushes = all_straights(cards_with_suit(cards,flushes));
+    const score_tv suited = cards_with_suit(cards,flushes);
+    const score_tv straight_flushes = all_straights(suited);
     score_tv score = if_nz1(straight_flushes,SCORE(STRAIGHT_FLUSH,0,max_bit(straight_flushes)));
 
     // Check for four of a kind (2+3+2+3+1+2+3+2+1 = 19 operations)
@@ -229,12 +230,12 @@ score_tv score_hand(cards_tv cards) {
     const score_tv pairs = pairs_and_trips-trips;
     score = max(score,select((score_tv)0,SCORE(FULL_HOUSE,trips,max_bit(pairs)),(pairs!=0)&(trips!=0)));
 
-    // Check for flushes (7+7+2*(2+1+2)+1+2+3 = 30 operations)
+    // Check for flushes (7+2*(2+1+2)+1+2+3 = 23 operations)
     const score_tv suit_count = cards_with_suit(suits,flushes);
-    score_tv suited = cards_with_suit(cards,flushes);
-    suited = if_gt(suit_count,5u,suited-min_bit(suited),suited);
-    suited = if_gt(suit_count,6u,suited-min_bit(suited),suited);
-    score = max(score,if_nz1(suited,SCORE(FLUSH,0,suited)));
+    score_tv best_suited = suited;
+    best_suited = if_gt(suit_count,5u,best_suited-min_bit(best_suited),best_suited);
+    best_suited = if_gt(suit_count,6u,best_suited-min_bit(best_suited),best_suited);
+    score = max(score,if_nz1(best_suited,SCORE(FLUSH,0,best_suited)));
 
     // Check for straights (8+1+2+3+2 = 16 operations)
     const score_tv straights = all_straights(unique);
