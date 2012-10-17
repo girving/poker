@@ -56,7 +56,7 @@ inline uint64_t hash(uint64_t k);
 inline uint64_t hash2(uint64_t a, uint64_t b);
 inline uint64_t hash3(uint64_t a, uint64_t b, uint64_t c);
 #ifdef __OPENCL_VERSION__
-inline uint64_tv hashv(uint64_tv k);
+inline uint64_tv hashv(uint64_tv k) __attribute__((unused));
 inline uint64_tv hash2v(uint64_tv a, uint64_tv b);
 inline uint64_tv hash3v(uint64_tv a, uint64_tv b, uint64_tv c);
 #endif
@@ -168,14 +168,14 @@ inline score_tv cards_with_suit(cards_tv cards, cards_tv suits) {
 // Non-branching ternary operators.  All the 0* stuff is to make overload resolution work.  It should disappear at compile time.
 // I'm counting each of these as two operations.
 #define DEFINE_IFS(suffix,type) \
-    inline type if_nz##suffix(type c, type a, type b); \
-    inline type if_eq##suffix(type x, type y, type a, type b); \
-    inline type if_ne##suffix(type x, type y, type a, type b); \
-    inline type if_gt##suffix(type x, type y, type a, type b); \
-    inline type if_ge##suffix(type x, type y, type a, type b); \
-    inline type if_nz1##suffix(type c, type a); \
-    inline type if_eq1##suffix(type x, type y, type a); \
-    inline type if_ne1##suffix(type x, type y, type a); \
+    inline type if_nz##suffix(type c, type a, type b) __attribute__((unused)); \
+    inline type if_eq##suffix(type x, type y, type a, type b) __attribute__((unused)); \
+    inline type if_ne##suffix(type x, type y, type a, type b) __attribute__((unused)); \
+    inline type if_gt##suffix(type x, type y, type a, type b) __attribute__((unused)); \
+    inline type if_ge##suffix(type x, type y, type a, type b) __attribute__((unused)); \
+    inline type if_nz1##suffix(type c, type a) __attribute__((unused)); \
+    inline type if_eq1##suffix(type x, type y, type a) __attribute__((unused)); \
+    inline type if_ne1##suffix(type x, type y, type a) __attribute__((unused)); \
     inline type if_nz##suffix(type c, type a, type b) { return select(a,b,isequal(c,0)); } \
     inline type if_eq##suffix(type x, type y, type a, type b) { return select(b,a,isequal(x,y)); } \
     inline type if_ne##suffix(type x, type y, type a, type b) { return select(b,a,isnotequal(x,y)); } \
