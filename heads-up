@@ -8,7 +8,6 @@ import optparse
 from numpy import *
 from nash import *
 from util import *
-from rational import *
 
 usage = "usage: %prog [options...] [args...]"
 parser = optparse.OptionParser(usage)
@@ -21,6 +20,7 @@ parser.add_option('--max',action='store_true',help="maximize Alice's equity as a
 parser.add_option('--donkey',type=int,default=0,help="compute optimum strategy against an always all-in player, with a given total chip count")
 parser.add_option('--random',action='store_true',help="print win/lose/tie probabilities of each hand vs. a random hand")
 parser.add_option('--variable',type=int,default=0,help="compute the Nash equilibrium for a game where Alice has a choice of bets")
+parser.add_option('--inexact',action='store_true',help='avoid use of exact rational arithmetic')
 parser.add_option('-d','--deterministic',action='store_true',help="switch to deterministic outcomes")
 parser.add_option('-n',type=int,default=10,help="number of samples to plot")
 parser.add_option('-v','--verbose',action='store_true',help="print or plot extra information")
@@ -30,6 +30,15 @@ options,args = parser.parse_args()
 if len(args): parser.error('zero arguments expected')
 
 set_printoptions(linewidth=150)
+
+if not options.inexact:
+  from rational import *
+  R = rational
+  def veryclose(a,b):
+    return all(a==b)
+else:
+  R = float
+  veryclose = allclose
 
 cards = '23456789TJQKA'
 nonpairs = [cards[i]+cards[j] for i in xrange(len(cards)) for j in xrange(i)]
@@ -52,7 +61,7 @@ def parse_exact_matchups():
         entry_pattern = re.compile(r'^\s+(Alice|Bob|Tie):\s+(\d+/\d+) = ([\d.]+)$')
         lines = open('exact.txt').readlines()
         assert len(lines)%4==0
-        win = zeros((len(hands),)*2,dtype=rational)
+        win = zeros((len(hands),)*2,dtype=R)
         for i in xrange(len(lines)//4):
             m = matchup_pattern.match(lines[4*i])
             if not m: die('Weird matchup line: %s'%lines[4*i][:-1])
@@ -61,20 +70,29 @@ def parse_exact_matchups():
                 m = entry_pattern.match(lines[4*i+j+1])
                 if not m: die('Weird entry line: %s'%lines[4*i+j+1][:-1])
                 assert m.group(1)==name
+                if options.inexact:
+                  a,b = map(float64,m.group(2).split('/'))
+                  return a/b
                 return rational(m.group(2))
             w,l,t= entry(0,'Alice'),entry(1,'Bob'),entry(2,'Tie')
-            assert w+l+t==1
+            assert veryclose(w+l+t,1)
             win[h0,h1] = w
             win[h1,h0] = l
         assert all(win>0)
-        savez_compressed(file,n=numerator(win),d=denominator(win))
+        if options.inexact:
+          savez_compressed(file,win=win)
+        else:
+          savez_compressed(file,n=numerator(win),d=denominator(win))
         return win
     else:
         data = load(file)
-        win = rationals(data['n'])/data['d']
+        if options.inexact:
+          win = data['win']
+        else:
+          win = rationals(data['n'])/data['d']
         return win
 exact_win = parse_exact_matchups()
-assert ahash(exact_win)==7392642596451405510
+assert ahash(exact_win)==(8198859743626163791 if options.inexact else 7392642596451405510)
 
 # Build a map from pairs of cards (represented as 4*id+suit) to hand ids
 def compute_cards_to_hand():
@@ -103,14 +121,14 @@ def hand_probabilities():
     # Count how many times h occurs in cards_to_hand for each h
     def prob(x):
         prob = sum(x.reshape(1,-1)==arange(len(hands)).reshape(-1,1),axis=1)
-        return rationals(prob)/sum(prob)
+        return prob.astype(R)/sum(prob)
     hand_prob = prob(cards_to_hand)
 
     i = xrange(len(cards_to_hand))
     hand_to_cards = dict((cards_to_hand[c,d],(c,d)) for c in i for d in i)
 
     # Compute conditional probabilities of each hand given each other hand
-    cond_hand_prob = zeros((len(hands),)*2,rational)
+    cond_hand_prob = zeros((len(hands),)*2,R)
     for h in xrange(len(hands)):
         cs = hand_to_cards[h]
         remaining = array([i for i in xrange(13*4) if i not in cs])
@@ -118,30 +136,29 @@ def hand_probabilities():
     return hand_prob,cond_hand_prob
 exact_hand_prob,exact_cond_hand_prob = hand_probabilities()
 exact_hand_hand_prob = exact_hand_prob.reshape(-1,1)*exact_cond_hand_prob
-assert all(sum(exact_cond_hand_prob,axis=1)==1)
-assert sum(exact_hand_hand_prob)==1
-assert all(exact_hand_hand_prob==exact_hand_hand_prob.T)
+assert veryclose(sum(exact_cond_hand_prob,axis=1),1)
+assert veryclose(sum(exact_hand_hand_prob),1)
+assert veryclose(exact_hand_hand_prob,exact_hand_hand_prob.T)
 
 # Check all interesting conditional probabilities
-R = rational
-assert exact_hand_prob[hand_id['AA']]==R(1)/13*3/51
-assert exact_hand_prob[hand_id['AKs']]==R(2)/13/51
-assert exact_hand_prob[hand_id['AKo']]==R(2)/13*3/51
-assert exact_cond_hand_prob[hand_id['AA'],hand_id['AA']]==R(2)/50*1/49
-assert exact_cond_hand_prob[hand_id['AA'],hand_id['KK']]==R(4)/50*3/49
-assert exact_cond_hand_prob[hand_id['AA'],hand_id['AKs']]==R(2)*2/50/49
-assert exact_cond_hand_prob[hand_id['AA'],hand_id['AKo']]==R(2)*2/50*3/49
-assert exact_cond_hand_prob[hand_id['AA'],hand_id['KQs']]==R(2)*4/50/49
-assert exact_cond_hand_prob[hand_id['AA'],hand_id['KQo']]==R(2)*4/50*3/49
-assert exact_cond_hand_prob[hand_id['AKs'],hand_id['AKs']]==R(2)*3/50/49
-assert exact_cond_hand_prob[hand_id['AKs'],hand_id['AKo']]==R(2)*3/50*2/49
-assert exact_cond_hand_prob[hand_id['AKs'],hand_id['AQs']]==R(2)*3/50/49
-assert exact_cond_hand_prob[hand_id['AKs'],hand_id['AQo']]==R(2)*3/50*3/49
-assert exact_cond_hand_prob[hand_id['AKs'],hand_id['QJs']]==R(2)*4/50/49
-assert exact_cond_hand_prob[hand_id['AKs'],hand_id['QJo']]==R(2)*4/50*3/49
-assert exact_cond_hand_prob[hand_id['AKo'],hand_id['AKo']]==R(2)/50*3/49+R(2)*2/50*2/49
-assert exact_cond_hand_prob[hand_id['AKo'],hand_id['AQo']]==R(2)*3/50*3/49
-assert exact_cond_hand_prob[hand_id['AKo'],hand_id['QJo']]==R(2)*4/50*3/49
+assert veryclose(exact_hand_prob[hand_id['AA']],R(1)/13*3/51)
+assert veryclose(exact_hand_prob[hand_id['AKs']],R(2)/13/51)
+assert veryclose(exact_hand_prob[hand_id['AKo']],R(2)/13*3/51)
+assert veryclose(exact_cond_hand_prob[hand_id['AA'],hand_id['AA']],R(2)/50*1/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AA'],hand_id['KK']],R(4)/50*3/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AA'],hand_id['AKs']],R(2)*2/50/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AA'],hand_id['AKo']],R(2)*2/50*3/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AA'],hand_id['KQs']],R(2)*4/50/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AA'],hand_id['KQo']],R(2)*4/50*3/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AKs'],hand_id['AKs']],R(2)*3/50/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AKs'],hand_id['AKo']],R(2)*3/50*2/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AKs'],hand_id['AQs']],R(2)*3/50/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AKs'],hand_id['AQo']],R(2)*3/50*3/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AKs'],hand_id['QJs']],R(2)*4/50/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AKs'],hand_id['QJo']],R(2)*4/50*3/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AKo'],hand_id['AKo']],R(2)/50*3/49+R(2)*2/50*2/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AKo'],hand_id['AQo']],R(2)*3/50*3/49)
+assert veryclose(exact_cond_hand_prob[hand_id['AKo'],hand_id['QJo']],R(2)*4/50*3/49)
 
 # Switch to deterministic outcomes
 if options.deterministic:
@@ -258,7 +275,7 @@ def poker_nash_equilibrium(bet,(alice,bob)=always_call(),n=1000,verbose=1):
     while 1:
         # Compute Nash equilibrium ranging over our current list of Alice's and Bob's strategies
         print 'computing payoffs...'
-        payoff = empty((len(alices),len(bobs)),rational)
+        payoff = empty((len(alices),len(bobs)),R)
         for a,alice in enumerate(alices):
             for b,bob in enumerate(bobs):
                 payoff[a,b] = check_payoff(bet,alice,bob,exact=1)
